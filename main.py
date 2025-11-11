@@ -2,130 +2,125 @@ import streamlit as st
 import requests
 import pandas as pd
 import plotly.express as px
-from streamlit_geolocation import st_geolocation
+import streamlit.components.v1 as components
+import time
 
 # ===========================
 # KONFIGURASI DASAR
 # ===========================
-st.set_page_config(
-    page_title="🌦️ Prakiraan Cuaca Indonesia",
-    page_icon="🌤️",
-    layout="centered"
-)
+st.set_page_config(page_title="🌦️ Prakiraan Cuaca", page_icon="🌤️", layout="centered")
 
-# Ganti API key kamu di sini (dari https://openweathermap.org/api)
-OWM_API_KEY = "648469f28a0f56ca8c8b52d00db2ac8a"
-
-# Lokasi default: Polewali
+API_KEY = "648469f28a0f56ca8c8b52d00db2ac8a"  # OpenWeatherMap free API
 DEFAULT_CITY = "Polewali"
 DEFAULT_LAT, DEFAULT_LON = -3.4328, 119.3435
 
 
 # ===========================
-# HELPER FUNCTION
+# JAVASCRIPT UNTUK GPS
 # ===========================
-def get_weather_by_city(city):
-    """Ambil data cuaca saat ini berdasarkan nama kota."""
-    try:
-        url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={OWM_API_KEY}&units=metric&lang=id"
-        res = requests.get(url)
-        res.raise_for_status()
-        return res.json()
-    except Exception as e:
-        st.error(f"Gagal memuat cuaca untuk {city}: {e}")
-        return None
+def get_user_location():
+    js_code = """
+    <script>
+    navigator.geolocation.getCurrentPosition(
+        (pos) => {
+            const coords = pos.coords.latitude + "," + pos.coords.longitude;
+            const search = new URLSearchParams(window.location.search);
+            search.set("coords", coords);
+            window.location.search = search.toString();
+        },
+        (err) => {
+            const search = new URLSearchParams(window.location.search);
+            search.set("error", err.message);
+            window.location.search = search.toString();
+        },
+        {enableHighAccuracy: true, timeout: 5000}
+    );
+    </script>
+    """
+    components.html(js_code, height=0, width=0)
 
 
-def get_forecast_by_city(city):
-    """Ambil prakiraan 5 hari berdasarkan nama kota."""
-    try:
-        url = f"https://api.openweathermap.org/data/2.5/forecast?q={city}&appid={OWM_API_KEY}&units=metric&lang=id"
-        res = requests.get(url)
-        res.raise_for_status()
-        return res.json()
-    except Exception as e:
-        st.warning(f"Gagal memuat prakiraan: {e}")
-        return None
-
-
+# ===========================
+# REVERSE GEOCODE KE NAMA KOTA
+# ===========================
 def reverse_geocode(lat, lon):
-    """Ubah koordinat jadi nama kota."""
     try:
-        geo_url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json"
-        data = requests.get(geo_url).json()
-        address = data.get("address", {})
-        return (
-            address.get("city")
-            or address.get("town")
-            or address.get("village")
-            or DEFAULT_CITY
-        )
-    except:
+        url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json"
+        geo = requests.get(url, headers={"User-Agent": "streamlit-weather"}).json()
+        return geo.get("address", {}).get("city", DEFAULT_CITY)
+    except Exception:
         return DEFAULT_CITY
 
 
 # ===========================
-# DETEKSI LOKASI OTOMATIS
+# FUNGSI PENGAMBIL CUACA (API GRATIS)
 # ===========================
-st.title("🌍 Aplikasi Prakiraan Cuaca Real-Time")
-st.markdown("#### Deteksi lokasi otomatis menggunakan GPS browser Anda")
+def get_weather(city, api_key=API_KEY):
+    try:
+        url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric&lang=id"
+        res = requests.get(url)
+        data = res.json()
 
-loc = st_geolocation(key="geoloc")
+        if res.status_code != 200 or "main" not in data:
+            raise Exception(data.get("message", "Gagal mengambil data cuaca."))
 
-if loc and loc.get("latitude") and loc.get("longitude"):
-    lat, lon = loc["latitude"], loc["longitude"]
-    city = reverse_geocode(lat, lon)
-    st.success(f"📍 Lokasi terdeteksi: **{city}** ({lat:.4f}, {lon:.4f})")
+        info = {
+            "Kota": data["name"],
+            "Suhu": f"{data['main']['temp']} °C",
+            "Kelembapan": f"{data['main']['humidity']}%",
+            "Tekanan": f"{data['main']['pressure']} hPa",
+            "Kecepatan Angin": f"{data['wind']['speed']} m/s",
+            "Deskripsi": data["weather"][0]["description"].capitalize(),
+            "Ikon": data["weather"][0]["icon"],
+        }
+        return info
+    except Exception as e:
+        st.error(f"⚠️ {e}")
+        return None
+
+
+# ===========================
+# APLIKASI UTAMA
+# ===========================
+st.title("🌦️ Prakiraan Cuaca Real-Time")
+st.write("Aplikasi prakiraan cuaca otomatis mendeteksi lokasi GPS atau bisa cari manual.")
+
+st.divider()
+
+params = st.query_params
+lat, lon, city = None, None, DEFAULT_CITY
+
+if "coords" in params:
+    try:
+        lat, lon = map(float, params["coords"].split(","))
+        city = reverse_geocode(lat, lon)
+        st.success(f"📍 Lokasi terdeteksi otomatis: **{city}** ({lat:.2f}, {lon:.2f})")
+    except:
+        st.warning("⚠️ Gagal membaca data GPS, gunakan pencarian manual.")
+elif "error" in params:
+    st.warning(f"⚠️ Gagal mendeteksi GPS: {params['error']}")
 else:
-    st.info("📍 Menggunakan lokasi default: **Polewali**")
-    lat, lon, city = DEFAULT_LAT, DEFAULT_LON, DEFAULT_CITY
+    get_user_location()
+    st.info("🛰️ Mohon izinkan akses lokasi di browser Anda...")
+    st.stop()
 
-
-# ===========================
-# PENCARIAN KOTA MANUAL
-# ===========================
-st.markdown("### 🔎 Cari Kota Lain (Opsional)")
-manual_city = st.text_input("Masukkan nama kota:", "")
-
+# Input manual kota
+st.divider()
+manual_city = st.text_input("🔍 Atau masukkan nama kota:", city)
 if manual_city:
     city = manual_city
 
-
 # ===========================
-# AMBIL DATA CUACA
+# TAMPILKAN DATA CUACA
 # ===========================
-weather = get_weather_by_city(city)
-forecast = get_forecast_by_city(city)
-
+weather = get_weather(city)
 if weather:
-    st.subheader(f"🌤️ Cuaca Saat Ini di {city}")
-    col1, col2 = st.columns(2)
+    st.markdown(f"## 🌤️ Cuaca di **{weather['Kota']}**")
+    st.image(f"https://openweathermap.org/img/wn/{weather['Ikon']}@2x.png", width=100)
+    st.write(f"**{weather['Deskripsi']}**")
+    st.metric("🌡️ Suhu", weather["Suhu"])
+    st.metric("💧 Kelembapan", weather["Kelembapan"])
+    st.metric("🌬️ Kecepatan Angin", weather["Kecepatan Angin"])
+    st.metric("📊 Tekanan Udara", weather["Tekanan"])
 
-    with col1:
-        st.metric("Suhu", f"{weather['main']['temp']} °C")
-        st.metric("Kelembapan", f"{weather['main']['humidity']} %")
-        st.metric("Tekanan Udara", f"{weather['main']['pressure']} hPa")
-
-    with col2:
-        st.metric("Kecepatan Angin", f"{weather['wind']['speed']} m/s")
-        st.metric("Awan", f"{weather['clouds']['all']} %")
-        st.metric("Kondisi", weather['weather'][0]['description'].capitalize())
-        icon = weather['weather'][0]['icon']
-        st.image(f"https://openweathermap.org/img/wn/{icon}@2x.png")
-
-# ===========================
-# GRAFIK PRAKIRAAN
-# ===========================
-if forecast:
-    st.subheader("📈 Prakiraan Cuaca 5 Hari ke Depan")
-    df = pd.DataFrame([
-        {"Waktu": item["dt_txt"], "Suhu (°C)": item["main"]["temp"]}
-        for item in forecast["list"]
-    ])
-    fig = px.line(df, x="Waktu", y="Suhu (°C)", title=f"Perkiraan Suhu Harian di {city}")
-    st.plotly_chart(fig, use_container_width=True)
-else:
-    st.warning("⚠️ Tidak dapat memuat data prakiraan cuaca.")
-
-st.caption("Data cuaca: OpenWeatherMap.org | Lokasi: OpenStreetMap | Aplikasi oleh ChatGPT + Kamu 🌦️")
-
+st.caption("Data diperoleh dari OpenWeatherMap API (versi gratis).")

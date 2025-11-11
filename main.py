@@ -46,7 +46,7 @@ st.write("")
 # ======================
 st.markdown("### 📍 Deteksi Lokasi Pengguna")
 
-def get_gps_location_via_js(timeout_ms: int = 7000):
+def get_gps_location_via_js():
     """Gunakan JS untuk mendapatkan lokasi GPS tanpa reload halaman"""
     try:
         from streamlit_javascript import st_javascript
@@ -66,16 +66,18 @@ def get_gps_location_via_js(timeout_ms: int = 7000):
         (err) => {
           resolve({ error: err.message });
         },
-        { enableHighAccuracy: true, maximumAge: 0, timeout: %d }
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 7000 }
       );
     });
-    """ % (timeout_ms)
+    """
 
     try:
-        result = st_javascript(js, key="get_gps_location", timeout=timeout_ms/1000 + 2)
+        # ⚠️ Hilangkan argumen 'timeout' (tidak diperlukan di versi sekarang)
+        result = st_javascript(js, key="get_gps_location")
         return result or {"error": "no_response"}
     except Exception as e:
         return {"error": f"st_javascript_error: {e}"}
+
 
 
 # -------------- main logic --------------
@@ -215,6 +217,7 @@ if forecast:
 # CATATAN
 # ======================
 st.info("💡 Data diperoleh dari OpenWeatherMap (Free API) dan lokasi otomatis dari GPS browser.")
+
 
 
 

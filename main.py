@@ -85,7 +85,7 @@ lat = lon = None
 city = None
 
 # 1️⃣ Coba deteksi lokasi via GPS browser
-gps_result = get_gps_location_via_js(timeout_ms=7000)
+gps_result = get_gps_location_via_js()
 
 if gps_result.get("error"):
     err = gps_result["error"]
@@ -110,7 +110,8 @@ else:
         city = city or "Lokasi tidak diketahui"
         st.success(f"📍 Lokasi GPS terdeteksi: **{city}** ({lat:.4f}, {lon:.4f})")
     except Exception as e:
-        st.warning(f"⚠️ Gagal membaca data lokasi: {e}")
+        st.warning(f"⚠️ Gagal membaca data lokasi
+
 
 # 2️⃣ Fallback: pencarian manual
 st.markdown("### 🔍 Cari Kota Manual (atau cari kota lain)")
@@ -217,6 +218,7 @@ if forecast:
 # CATATAN
 # ======================
 st.info("💡 Data diperoleh dari OpenWeatherMap (Free API) dan lokasi otomatis dari GPS browser.")
+
 
 
 

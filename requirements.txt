@@ -1,5 +1,6 @@
-streamlit==1.40.0
 requests
+streamlit>=1.18
 pandas
 plotly
+
 

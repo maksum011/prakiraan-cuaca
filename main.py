@@ -42,95 +42,101 @@ st.markdown("<div class='sub-title'>Aplikasi pendeteksi cuaca otomatis dengan lo
 st.write("")
 
 # ======================
-# DETEKSI LOKASI (GPS + MANUAL SEARCH)
+# DETEKSI LOKASI (GPS via streamlit-javascript + MANUAL SEARCH)
 # ======================
 st.markdown("### 📍 Deteksi Lokasi Pengguna")
 
-def get_gps_location():
-    """Minta lokasi pengguna via GPS (JavaScript)"""
-    js = """
-    <script>
-    function sendLocation() {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                (pos) => {
-                    const lat = pos.coords.latitude;
-                    const lon = pos.coords.longitude;
-                    const coords = `${lat},${lon}`;
-                    const url = new URL(window.location.href);
-                    url.searchParams.set('coords', coords);
-                    window.location.href = url.toString();
-                },
-                (err) => {
-                    const url = new URL(window.location.href);
-                    url.searchParams.set('error', err.message);
-                    window.location.href = url.toString();
-                },
-                {enableHighAccuracy: true, timeout: 5000}
-            );
-        } else {
-            const url = new URL(window.location.href);
-            url.searchParams.set('error', 'Browser tidak mendukung GPS');
-            window.location.href = url.toString();
-        }
-    }
-    sendLocation();
-    </script>
-    """
-    st.components.v1.html(js, height=0)
-
-# Inisialisasi variabel
-lat, lon, city = None, None, None
-
-# Jalankan deteksi GPS
-get_gps_location()
-time.sleep(1)
-
-# Ambil parameter dari URL (pakai API baru Streamlit)
-params = st.query_params
-
-if "coords" in params:
+def get_gps_location_via_js(timeout_ms: int = 7000):
+    """Gunakan JS untuk mendapatkan lokasi GPS tanpa reload halaman"""
     try:
-        lat, lon = map(float, params["coords"].split(","))
-        geo_url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json"
-        geo = requests.get(geo_url).json()
-        city = geo.get("address", {}).get("city", "Lokasi tidak diketahui")
-        st.success(f"📍 Lokasi terdeteksi: **{city}** ({lat:.2f}, {lon:.2f})")
+        from streamlit_javascript import st_javascript
+    except Exception:
+        return {"error": "streamlit_javascript_not_installed"}
+
+    js = """
+    new Promise((resolve) => {
+      if (!navigator.geolocation) {
+        resolve({ error: "Browser tidak mendukung geolocation" });
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+        },
+        (err) => {
+          resolve({ error: err.message });
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: %d }
+      );
+    });
+    """ % (timeout_ms)
+
+    try:
+        result = st_javascript(js, key="get_gps_location", timeout=timeout_ms/1000 + 2)
+        return result or {"error": "no_response"}
     except Exception as e:
-        st.warning(f"⚠️ Gagal membaca data GPS: {e}")
-elif "error" in params:
-    st.warning(f"⚠️ Gagal mendeteksi lokasi GPS: {params['error']}")
+        return {"error": f"st_javascript_error: {e}"}
+
+
+# -------------- main logic --------------
+lat = lon = None
+city = None
+
+# 1️⃣ Coba deteksi lokasi via GPS browser
+gps_result = get_gps_location_via_js(timeout_ms=7000)
+
+if gps_result.get("error"):
+    err = gps_result["error"]
+    if err == "streamlit_javascript_not_installed":
+        st.info("📦 Untuk deteksi GPS otomatis, install paket `streamlit-javascript`.")
+    else:
+        st.warning(f"⚠️ GPS error: {err}")
 else:
-    st.info("Silakan izinkan akses lokasi (Allow Location) di browser Anda.")
-    
-# ======================
-# FITUR PENCARIAN KOTA MANUAL
-# ======================
-st.markdown("### 🔍 Cari Kota Lainnya")
+    lat = gps_result.get("lat")
+    lon = gps_result.get("lon")
+    try:
+        geo_url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json"
+        geo = requests.get(geo_url, timeout=6).json()
+        address = geo.get("address", {})
+        city = (
+            address.get("city")
+            or address.get("town")
+            or address.get("village")
+            or address.get("county")
+            or address.get("state")
+        )
+        city = city or "Lokasi tidak diketahui"
+        st.success(f"📍 Lokasi GPS terdeteksi: **{city}** ({lat:.4f}, {lon:.4f})")
+    except Exception as e:
+        st.warning(f"⚠️ Gagal membaca data lokasi: {e}")
 
-city_input = st.text_input("Masukkan nama kota (contoh: Surabaya, Bandung, Medan):", value=city or "")
+# 2️⃣ Fallback: pencarian manual
+st.markdown("### 🔍 Cari Kota Manual (atau cari kota lain)")
 
-if st.button("Cari Cuaca Kota Ini"):
+city_input = st.text_input("Masukkan nama kota:", value=city or "")
+
+if st.button("Cari Kota Ini"):
     if city_input.strip() == "":
         st.warning("Masukkan nama kota terlebih dahulu.")
     else:
         try:
             geo_api = f"https://api.openweathermap.org/geo/1.0/direct?q={city_input}&limit=1&appid={OWM_API_KEY}"
-            geo_data = requests.get(geo_api).json()
-            if len(geo_data) == 0:
-                st.error("Kota tidak ditemukan. Coba nama lain.")
-            else:
+            geo_data = requests.get(geo_api, timeout=6).json()
+            if isinstance(geo_data, list) and len(geo_data) > 0:
                 lat = geo_data[0]["lat"]
                 lon = geo_data[0]["lon"]
-                city = geo_data[0]["name"]
-                st.success(f"📍 Lokasi manual: **{city}** ({lat:.2f}, {lon:.2f})")
+                city = geo_data[0].get("name") or city_input
+                st.success(f"📍 Lokasi manual: **{city}** ({lat:.4f}, {lon:.4f})")
+            else:
+                st.error("Kota tidak ditemukan. Coba ejaan lain.")
         except Exception as e:
             st.error(f"Gagal mencari kota: {e}")
 
-# Jika tetap tidak ada lokasi, fallback ke Jakarta
+# 3️⃣ Jika masih belum dapat lokasi, fallback ke Polewali
 if not lat or not lon:
-    lat, lon, city = -3.404667, 119.305695, "Polewali"
-    st.info("📍 Menggunakan lokasi default: Polewali")
+    lat, lon, city = -3.4329, 119.3435, "Polewali"
+    st.info(f"📍 Menggunakan lokasi default: **{city}** ({lat:.4f}, {lon:.4f})")
+
 
 # ======================
 # AMBIL DATA CUACA (Free API)
@@ -209,6 +215,7 @@ if forecast:
 # CATATAN
 # ======================
 st.info("💡 Data diperoleh dari OpenWeatherMap (Free API) dan lokasi otomatis dari GPS browser.")
+
 
 
 

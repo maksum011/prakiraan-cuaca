@@ -1,227 +1,155 @@
 import streamlit as st
 import requests
-import datetime
-import time
 import pandas as pd
 import plotly.express as px
+from datetime import datetime
+from streamlit_javascript import st_javascript
 
 # ======================
-# CONFIGURASI DASAR
+# KONFIGURASI DASAR
 # ======================
 st.set_page_config(page_title="🌦️ Prakiraan Cuaca", page_icon="🌤️", layout="centered")
 
-OWM_API_KEY = "648469f28a0f56ca8c8b52d00db2ac8a"  # <-- ganti dengan API key kamu sendiri
-DEFAULT_UNITS = "metric"  # metric = Celcius
+OWM_API_KEY = "648469f28a0f56ca8c8b52d00db2ac8a"  # ganti dengan API gratis OWM kamu
+DEFAULT_CITY = "Polewali"
+DEFAULT_LAT, DEFAULT_LON = -3.4329, 119.3435
+
+st.title("🌦️ Aplikasi Pendeteksi Cuaca BMKG Style")
+st.caption("Menampilkan cuaca real-time & prakiraan 5 hari ke depan dengan lokasi otomatis GPS.")
+
 
 # ======================
-# GAYA DAN HEADER
+# DETEKSI LOKASI GPS
 # ======================
-st.markdown("""
-    <style>
-    body {
-        background: linear-gradient(to bottom, #e0f7fa, #ffffff);
-        color: #004d66;
-    }
-    .main-title {
-        text-align:center; 
-        font-size:2.2em; 
-        font-weight:700; 
-        color:#0077b6;
-        margin-bottom:0.2em;
-    }
-    .sub-title {
-        text-align:center; 
-        font-size:1.1em; 
-        color:#555;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-st.markdown("<div class='main-title'>🌦️ Prakiraan Cuaca Terkini</div>", unsafe_allow_html=True)
-st.markdown("<div class='sub-title'>Aplikasi pendeteksi cuaca otomatis dengan lokasi GPS</div>", unsafe_allow_html=True)
-st.write("")
-
-# ======================
-# DETEKSI LOKASI (GPS via streamlit-javascript + MANUAL SEARCH)
-# ======================
-st.markdown("### 📍 Deteksi Lokasi Pengguna")
-
-def get_gps_location_via_js():
-    """Gunakan JS untuk mendapatkan lokasi GPS tanpa reload halaman"""
-    try:
-        from streamlit_javascript import st_javascript
-    except Exception:
-        return {"error": "streamlit_javascript_not_installed"}
-
+def get_gps_location():
+    """Minta lokasi pengguna via JavaScript (tanpa reload)"""
     js = """
     new Promise((resolve) => {
-      if (!navigator.geolocation) {
-        resolve({ error: "Browser tidak mendukung geolocation" });
-        return;
-      }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude });
-        },
-        (err) => {
-          resolve({ error: err.message });
-        },
-        { enableHighAccuracy: true, maximumAge: 0, timeout: 7000 }
-      );
+        if (!navigator.geolocation) {
+            resolve({ error: "Browser tidak mendukung geolocation" });
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+            },
+            (err) => {
+                resolve({ error: err.message });
+            },
+            { enableHighAccuracy: true, timeout: 7000 }
+        );
     });
     """
-
     try:
-        # ⚠️ Hilangkan argumen 'timeout' (tidak diperlukan di versi sekarang)
-        result = st_javascript(js, key="get_gps_location")
-        return result or {"error": "no_response"}
+        return st_javascript(js, key="get_gps")
     except Exception as e:
-        return {"error": f"st_javascript_error: {e}"}
+        return {"error": str(e)}
 
 
-
-# -------------- main logic --------------
-lat = lon = None
-city = None
-
-# 1️⃣ Coba deteksi lokasi via GPS browser
-gps_result = get_gps_location_via_js()
-
-if gps_result.get("error"):
-    err = gps_result["error"]
-    if err == "streamlit_javascript_not_installed":
-        st.info("📦 Untuk deteksi GPS otomatis, install paket `streamlit-javascript`.")
-    else:
-        st.warning(f"⚠️ GPS error: {err}")
-else:
-    lat = gps_result.get("lat")
-    lon = gps_result.get("lon")
+def reverse_geocode(lat, lon):
+    """Ubah koordinat menjadi nama kota"""
     try:
-        geo_url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json"
-        geo = requests.get(geo_url, timeout=6).json()
-        address = geo.get("address", {})
-        city = (
-            address.get("city")
-            or address.get("town")
-            or address.get("village")
-            or address.get("county")
-            or address.get("state")
-        )
-        city = city or "Lokasi tidak diketahui"
-        st.success(f"📍 Lokasi GPS terdeteksi: **{city}** ({lat:.4f}, {lon:.4f})")
-    except Exception as e:
-        st.warning(f"⚠️ Gagal membaca data lokasi
-
-
-# 2️⃣ Fallback: pencarian manual
-st.markdown("### 🔍 Cari Kota Manual (atau cari kota lain)")
-
-city_input = st.text_input("Masukkan nama kota:", value=city or "")
-
-if st.button("Cari Kota Ini"):
-    if city_input.strip() == "":
-        st.warning("Masukkan nama kota terlebih dahulu.")
-    else:
-        try:
-            geo_api = f"https://api.openweathermap.org/geo/1.0/direct?q={city_input}&limit=1&appid={OWM_API_KEY}"
-            geo_data = requests.get(geo_api, timeout=6).json()
-            if isinstance(geo_data, list) and len(geo_data) > 0:
-                lat = geo_data[0]["lat"]
-                lon = geo_data[0]["lon"]
-                city = geo_data[0].get("name") or city_input
-                st.success(f"📍 Lokasi manual: **{city}** ({lat:.4f}, {lon:.4f})")
-            else:
-                st.error("Kota tidak ditemukan. Coba ejaan lain.")
-        except Exception as e:
-            st.error(f"Gagal mencari kota: {e}")
-
-# 3️⃣ Jika masih belum dapat lokasi, fallback ke Polewali
-if not lat or not lon:
-    lat, lon, city = -3.4329, 119.3435, "Polewali"
-    st.info(f"📍 Menggunakan lokasi default: **{city}** ({lat:.4f}, {lon:.4f})")
+        url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json"
+        data = requests.get(url, timeout=5).json()
+        addr = data.get("address", {})
+        return addr.get("city") or addr.get("town") or addr.get("village") or addr.get("county") or "Lokasi tidak diketahui"
+    except:
+        return "Lokasi tidak diketahui"
 
 
 # ======================
-# AMBIL DATA CUACA (Free API)
+# PENGAMBILAN DATA CUACA
 # ======================
 def get_weather(lat, lon):
+    """Ambil data cuaca dari API gratis (current + forecast)"""
     try:
-        url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&units={DEFAULT_UNITS}&appid={OWM_API_KEY}&lang=id"
-        res = requests.get(url)
-        data = res.json()
-        if res.status_code != 200:
-            st.error("Gagal memuat data cuaca: " + data.get("message", "Tidak diketahui"))
-            return None
-        return data
+        current_url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&units=metric&appid={OWM_API_KEY}"
+        forecast_url = f"https://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&units=metric&appid={OWM_API_KEY}"
+
+        current = requests.get(current_url).json()
+        forecast = requests.get(forecast_url).json()
+        return current, forecast
     except Exception as e:
         st.error(f"Gagal memuat data cuaca: {e}")
-        return None
+        return None, None
 
-weather = get_weather(lat, lon)
 
 # ======================
-# TAMPILKAN CUACA SAAT INI
+# UI LOKASI (GPS + MANUAL)
 # ======================
-if weather:
-    st.subheader(f"🌤️ Cuaca Saat Ini di {city}")
-    col1, col2 = st.columns(2)
+st.subheader("📍 Deteksi Lokasi")
+
+gps = get_gps_location()
+lat, lon, city = None, None, None
+
+if gps and not gps.get("error"):
+    lat, lon = gps.get("lat"), gps.get("lon")
+    city = reverse_geocode(lat, lon)
+    st.success(f"📍 Lokasi GPS terdeteksi: **{city}** ({lat:.2f}, {lon:.2f})")
+else:
+    if gps.get("error"):
+        st.warning(f"⚠️ Tidak dapat mendeteksi GPS: {gps['error']}")
+    st.info(f"📍 Menggunakan lokasi default: **{DEFAULT_CITY}**")
+    lat, lon, city = DEFAULT_LAT, DEFAULT_LON, DEFAULT_CITY
+
+# Input pencarian kota manual
+st.text_input("🔎 Cari kota lain:", key="manual_city")
+if st.session_state.manual_city:
+    q = st.session_state.manual_city
+    geo_url = f"https://api.openweathermap.org/geo/1.0/direct?q={q}&limit=1&appid={OWM_API_KEY}"
+    res = requests.get(geo_url).json()
+    if res:
+        lat, lon, city = res[0]["lat"], res[0]["lon"], res[0]["name"]
+        st.success(f"📍 Lokasi manual: **{city}** ({lat:.2f}, {lon:.2f})")
+    else:
+        st.error("Kota tidak ditemukan.")
+
+
+# ======================
+# TAMPILKAN DATA CUACA
+# ======================
+current, forecast = get_weather(lat, lon)
+if not current:
+    st.stop()
+
+try:
+    st.markdown("---")
+    st.markdown(f"## 🌤️ Cuaca Sekarang di **{city}**")
+
+    temp = current["main"]["temp"]
+    desc = current["weather"][0]["description"].capitalize()
+    icon = current["weather"][0]["icon"]
+    humidity = current["main"]["humidity"]
+    wind = current["wind"]["speed"]
+
+    col1, col2 = st.columns([1, 2])
     with col1:
-        st.image(f"https://openweathermap.org/img/wn/{weather['weather'][0]['icon']}@2x.png")
-        st.markdown(f"**{weather['weather'][0]['description'].capitalize()}**")
+        st.image(f"https://openweathermap.org/img/wn/{icon}@2x.png", width=100)
     with col2:
-        st.metric("Suhu", f"{weather['main']['temp']} °C")
-        st.metric("Kelembapan", f"{weather['main']['humidity']}%")
-        st.metric("Tekanan Udara", f"{weather['main']['pressure']} hPa")
+        st.metric("Suhu", f"{temp:.1f}°C")
+        st.metric("Kelembapan", f"{humidity}%")
+        st.metric("Kecepatan Angin", f"{wind} m/s")
 
-    st.divider()
+    # ======================
+    # GRAFIK PRAKIRAAN 5 HARI
+    # ======================
+    st.markdown("---")
+    st.subheader("📊 Prakiraan 5 Hari ke Depan")
 
-    # Informasi tambahan
-    st.write("🌬️ **Kecepatan Angin:**", f"{weather['wind']['speed']} m/s")
-    st.write("☁️ **Awan:**", f"{weather['clouds']['all']}%")
-    st.write("🌡️ **Suhu Maksimum:**", f"{weather['main']['temp_max']} °C")
-    st.write("🌡️ **Suhu Minimum:**", f"{weather['main']['temp_min']} °C")
-    st.write("🌅 **Terbit:**", datetime.datetime.fromtimestamp(weather['sys']['sunrise']).strftime('%H:%M'))
-    st.write("🌇 **Terbenam:**", datetime.datetime.fromtimestamp(weather['sys']['sunset']).strftime('%H:%M'))
+    df = pd.DataFrame([
+        {
+            "Waktu": datetime.fromtimestamp(item["dt"]),
+            "Suhu (°C)": item["main"]["temp"],
+            "Cuaca": item["weather"][0]["description"].capitalize()
+        }
+        for item in forecast["list"]
+    ])
 
-# ======================
-# PRAKIRAAN (5 HARI)
-# ======================
-def get_forecast(lat, lon):
-    try:
-        url = f"https://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&units={DEFAULT_UNITS}&appid={OWM_API_KEY}&lang=id"
-        res = requests.get(url)
-        data = res.json()
-        if res.status_code != 200:
-            st.warning("Tidak dapat memuat data prakiraan: " + data.get("message", ""))
-            return None
-        return data
-    except:
-        return None
-
-forecast = get_forecast(lat, lon)
-
-if forecast:
-    st.subheader("📅 Prakiraan Cuaca 5 Hari ke Depan")
-    df = pd.DataFrame([{
-        "Waktu": item["dt_txt"],
-        "Suhu (°C)": item["main"]["temp"],
-        "Kelembapan (%)": item["main"]["humidity"],
-        "Cuaca": item["weather"][0]["description"]
-    } for item in forecast["list"]])
-
-    fig = px.line(df, x="Waktu", y="Suhu (°C)", title="Perkiraan Suhu Harian")
+    fig = px.line(df, x="Waktu", y="Suhu (°C)", title="Perkiraan Suhu Harian", markers=True)
     st.plotly_chart(fig, use_container_width=True)
 
-    st.dataframe(df[["Waktu", "Suhu (°C)", "Kelembapan (%)", "Cuaca"]])
+except Exception as e:
+    st.error(f"Gagal memproses data cuaca: {e}")
 
-# ======================
-# CATATAN
-# ======================
-st.info("💡 Data diperoleh dari OpenWeatherMap (Free API) dan lokasi otomatis dari GPS browser.")
-
-
-
-
-
-
-
+st.markdown("---")
+st.caption("💧 Data cuaca oleh OpenWeatherMap (Free API) • Desain ala BMKG by ChatGPT")

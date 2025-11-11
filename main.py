@@ -90,8 +90,8 @@ lat, lon = get_gps_location()
 
 if lat is None or lon is None:
     # fallback jika tidak bisa ambil GPS
-    st.warning("⚠️ Tidak dapat mendeteksi GPS. Menggunakan lokasi default Jakarta.")
-    lat, lon = -6.2146, 106.8451
+    st.warning("⚠️ Tidak dapat mendeteksi GPS. Menggunakan lokasi default Polewali.")
+    lat, lon = -3.404667, 119.305695
 
 # Ambil nama kota dari koordinat
 try:
@@ -180,3 +180,4 @@ if forecast:
 # CATATAN
 # ======================
 st.info("💡 Data diperoleh dari OpenWeatherMap (Free API) dan lokasi otomatis dari GPS browser.")
+

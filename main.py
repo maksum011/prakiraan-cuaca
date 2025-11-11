@@ -14,7 +14,7 @@ st.set_page_config(
 )
 
 # Ganti API key kamu di sini (dari https://openweathermap.org/api)
-OWM_API_KEY = "MASUKKAN_API_KEY_KAMU_DI_SINI"
+OWM_API_KEY = "648469f28a0f56ca8c8b52d00db2ac8a"
 
 # Lokasi default: Polewali
 DEFAULT_CITY = "Polewali"
@@ -128,3 +128,4 @@ else:
     st.warning("⚠️ Tidak dapat memuat data prakiraan cuaca.")
 
 st.caption("Data cuaca: OpenWeatherMap.org | Lokasi: OpenStreetMap | Aplikasi oleh ChatGPT + Kamu 🌦️")
+

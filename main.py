@@ -41,67 +41,6 @@ st.markdown("<div class='main-title'>🌦️ Prakiraan Cuaca Terkini</div>", uns
 st.markdown("<div class='sub-title'>Aplikasi pendeteksi cuaca otomatis dengan lokasi GPS</div>", unsafe_allow_html=True)
 st.write("")
 
-# ======================
-# DETEKSI LOKASI (GPS + MANUAL SEARCH)
-# ======================
-st.markdown("### 📍 Deteksi Lokasi Pengguna")
-
-def get_gps_location():
-    """Minta lokasi pengguna via GPS (JavaScript)"""
-    js = """
-    <script>
-    function sendLocation() {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                (pos) => {
-                    const lat = pos.coords.latitude;
-                    const lon = pos.coords.longitude;
-                    const coords = `${lat},${lon}`;
-                    const url = new URL(window.location.href);
-                    url.searchParams.set('coords', coords);
-                    window.location.href = url.toString();
-                },
-                (err) => {
-                    const url = new URL(window.location.href);
-                    url.searchParams.set('error', err.message);
-                    window.location.href = url.toString();
-                },
-                {enableHighAccuracy: true, timeout: 5000}
-            );
-        } else {
-            const url = new URL(window.location.href);
-            url.searchParams.set('error', 'Browser tidak mendukung GPS');
-            window.location.href = url.toString();
-        }
-    }
-    sendLocation();
-    </script>
-    """
-    st.components.v1.html(js, height=0)
-
-# Inisialisasi variabel
-lat, lon, city = None, None, None
-
-# Jalankan deteksi GPS
-get_gps_location()
-time.sleep(1)
-
-# Ambil parameter dari URL (pakai API baru Streamlit)
-params = st.query_params
-
-if "coords" in params:
-    try:
-        lat, lon = map(float, params["coords"].split(","))
-        geo_url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json"
-        geo = requests.get(geo_url).json()
-        city = geo.get("address", {}).get("city", "Lokasi tidak diketahui")
-        st.success(f"📍 Lokasi terdeteksi: **{city}** ({lat:.2f}, {lon:.2f})")
-    except Exception as e:
-        st.warning(f"⚠️ Gagal membaca data GPS: {e}")
-elif "error" in params:
-    st.warning(f"⚠️ Gagal mendeteksi lokasi GPS: {params['error']}")
-else:
-    st.info("Silakan izinkan akses lokasi (Allow Location) di browser Anda.")
 
 # ======================
 # FITUR PENCARIAN KOTA MANUAL
@@ -209,5 +148,6 @@ if forecast:
 # CATATAN
 # ======================
 st.info("💡 Data diperoleh dari OpenWeatherMap (Free API) dan lokasi otomatis dari GPS browser.")
+
 
 
